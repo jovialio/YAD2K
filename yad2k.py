@@ -27,9 +27,11 @@ from yad2k.models.keras_yolo import (space_to_depth_x2,
 
 parser = argparse.ArgumentParser(
     description='Yet Another Darknet To Keras Converter.')
-parser.add_argument('config_path', help='Path to Darknet cfg file.')
-parser.add_argument('weights_path', help='Path to Darknet weights file.')
-parser.add_argument('output_path', help='Path to output Keras model file.')
+parser.add_argument('--config_path', required=True, help='Path to Darknet cfg file.')
+parser.add_argument('--weights_path', required=True, help='Path to Darknet weights file.')
+parser.add_argument(
+    '--output_path', 
+    help='Path to output Keras model file.')
 parser.add_argument(
     '-p',
     '--plot_model',
@@ -63,18 +65,21 @@ def unique_config_sections(config_file):
 
 
 # %%
-def _main(args):
-    config_path = os.path.expanduser(args.config_path)
-    weights_path = os.path.expanduser(args.weights_path)
+def convert_darknet2keras(config_path, weights_path, output_path=None, fully_convolutional=False, plot_model=False):
+    config_path = os.path.expanduser(config_path)
+    weights_path = os.path.expanduser(weights_path)
     assert config_path.endswith('.cfg'), '{} is not a .cfg file'.format(
         config_path)
     assert weights_path.endswith(
         '.weights'), '{} is not a .weights file'.format(weights_path)
 
-    output_path = os.path.expanduser(args.output_path)
-    assert output_path.endswith(
-        '.h5'), 'output path {} is not a .h5 file'.format(output_path)
-    output_root = os.path.splitext(output_path)[0]
+    if output_path:
+        output_path = os.path.expanduser(output_path)
+        assert output_path.endswith(
+            '.h5'), 'output path {} is not a .h5 file'.format(output_path)
+        output_root = os.path.splitext(output_path)[0]
+    else:
+        output_root = None
 
     # Load weights and config.
     print('Loading weights.')
@@ -91,7 +96,7 @@ def _main(args):
     cfg_parser.read_file(unique_config_file)
 
     print('Creating Keras model.')
-    if args.fully_convolutional:
+    if fully_convolutional:
         image_height, image_width = None, None
     else:
         image_height = int(cfg_parser['net_0']['height'])
@@ -237,8 +242,9 @@ def _main(args):
             prev_layer = all_layers[-1]
 
         elif section.startswith('region'):
-            with open('{}_anchors.txt'.format(output_root), 'w') as f:
-                print(cfg_parser[section]['anchors'], file=f)
+            if output_root:
+                with open('{}_anchors.txt'.format(output_root), 'w') as f:
+                    print(cfg_parser[section]['anchors'], file=f)
 
         elif (section.startswith('net') or section.startswith('cost') or
               section.startswith('softmax')):
@@ -251,8 +257,9 @@ def _main(args):
     # Create and save model.
     model = Model(inputs=all_layers[0], outputs=all_layers[-1])
     print(model.summary())
-    model.save('{}'.format(output_path))
-    print('Saved Keras model to {}'.format(output_path))
+    if output_path:
+        model.save('{}'.format(output_path))
+        print('Saved Keras model to {}'.format(output_path))
     # Check to see if all weights have been read.
     remaining_weights = len(weights_file.read()) / 4
     weights_file.close()
@@ -261,10 +268,13 @@ def _main(args):
     if remaining_weights > 0:
         print('Warning: {} unused weights'.format(remaining_weights))
 
-    if args.plot_model:
+    if plot_model and output_root:
         plot(model, to_file='{}.png'.format(output_root), show_shapes=True)
         print('Saved model plot to {}.png'.format(output_root))
 
+    return model
+
 
 if __name__ == '__main__':
-    _main(parser.parse_args())
+    args = parser.parse_args()
+    convert_darknet2keras(args.config_path, args.weights_path, args.output_path, args.fully_convolutional, args.plot_model)
